@@ -184,15 +184,80 @@ def test_audit_endpoint_returns_chain_status(tmp_path: Path) -> None:
     assert "Chain valid" in body  # HTML banner copy
 
 
-def test_policy_endpoint_returns_raw_yaml(tmp_path: Path) -> None:
+def test_policy_page_renders_html_with_yaml(tmp_path: Path) -> None:
+    """F11 changed /policy to HTML; F7's policy test is replaced."""
     cfg = make_config(tmp_path)
     client = TestClient(create_app(cfg))
     resp = client.get("/policy")
     assert resp.status_code == 200
-    body = resp.json()
-    assert "content" in body
-    assert "echo" in body["content"]
-    assert "shout" in body["content"]
+    assert "text/html" in resp.headers["content-type"]
+    body = resp.text
+    assert "echo" in body
+    assert "shout" in body
+    assert "raw-yaml" in body
+
+
+# ---------- F11: Policy UI ----------
+
+
+def test_policy_page_renders_html(tmp_path: Path) -> None:
+    cfg = make_config(tmp_path)
+    client = TestClient(create_app(cfg))
+    resp = client.get("/policy")
+    assert resp.status_code == 200
+    assert "text/html" in resp.headers["content-type"]
+    assert "Policy" in resp.text
+
+
+def test_policy_page_shows_default(tmp_path: Path) -> None:
+    pol = write_policy(
+        tmp_path,
+        """
+        default: deny
+        rules:
+          - tool: x
+            decision: allow
+        """,
+    )
+    cfg = AppConfig(
+        agent_id="bot", policy_path=pol, audit_path=tmp_path / "a.jsonl", key_dir=tmp_path / "keys"
+    )
+    client = TestClient(create_app(cfg))
+    resp = client.get("/policy")
+    assert resp.status_code == 200
+    assert "deny" in resp.text
+
+
+def test_policy_page_shows_agent_scope(tmp_path: Path) -> None:
+    pol = write_policy(
+        tmp_path,
+        """
+        agent: analyst-bot
+        rules:
+          - tool: x
+            decision: allow
+        """,
+    )
+    cfg = AppConfig(
+        agent_id="bot", policy_path=pol, audit_path=tmp_path / "a.jsonl", key_dir=tmp_path / "keys"
+    )
+    client = TestClient(create_app(cfg))
+    resp = client.get("/policy")
+    assert resp.status_code == 200
+    assert "analyst-bot" in resp.text
+
+
+def test_policy_page_missing_file_returns_500(tmp_path: Path) -> None:
+    cfg = AppConfig(
+        agent_id="bot",
+        policy_path=tmp_path / "missing.yaml",
+        audit_path=tmp_path / "a.jsonl",
+        key_dir=tmp_path / "keys",
+    )
+    client = TestClient(create_app(cfg))
+    resp = client.get("/policy")
+    assert resp.status_code == 500
+    assert "policy file not found" in resp.text
 
 
 def test_chat_empty_messages_returns_400() -> None:
