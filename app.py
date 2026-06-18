@@ -2,7 +2,7 @@
 
 This file lives at the repo root (not under `zta/`) because it is the
 demo service that USES the ZTA library. F7 shipped the JSON skeleton;
-F8 wired OpenAI function calling; F9 added the Jinja2 chat UI; F10
+F8 wired OpenAI function calling (since swapped to LangChain ChatOpenAI); F9 added the Jinja2 chat UI; F10
 and F11 wrapped the audit and policy endpoints in templates; F12
 adds db_query/db_write tools, the seed script, and e2e smoke.
 
@@ -156,9 +156,7 @@ def _run_chat_loop(
             for tc in ai.tool_calls:
                 result = agent.tool(tc["name"], **tc["args"])
                 tool_content = str(result.value) if result.ok else (result.error or "")
-                messages.append(
-                    {"role": "tool", "tool_call_id": tc["id"], "content": tool_content}
-                )
+                messages.append({"role": "tool", "tool_call_id": tc["id"], "content": tool_content})
     raise HTTPException(
         status_code=500, detail=f"too many tool iterations (>{MAX_TOOL_ITERATIONS})"
     )

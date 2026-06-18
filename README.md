@@ -3,7 +3,7 @@
 In-process Python library that gates every AI agent action through a
 declarative policy and writes an append-only audit trail. A FastAPI
 service with Jinja2 chat UI is the demo runtime; the analyst agent
-uses OpenAI function calling, the ZTA library intercepts each call,
+uses LangChain tool calling (ChatOpenAI), the ZTA library intercepts each call,
 and a SQLite database is the tool surface.
 
 ## Status
@@ -43,7 +43,7 @@ uvicorn app:app --reload
 ```
 Browser (Jinja2)
   -> FastAPI (app.py)
-    -> OpenAI Chat Completions (function calling)
+    -> LangChain ChatOpenAI (tool calling)
       -> zta.runtime.session
         -> Policy.decide (F3) -> Audit.append (F4)
         -> Tool call (db_query, db_write, echo) via ToolRegistry (F5)

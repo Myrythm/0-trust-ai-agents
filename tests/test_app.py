@@ -1,4 +1,4 @@
-"""Tests for the FastAPI app (F7 + F8)."""
+"""Tests for the FastAPI app (F7 + F8; F8 now uses LangChain ChatOpenAI)."""
 
 from __future__ import annotations
 
@@ -43,7 +43,7 @@ def _openai_completion(
     tool_calls: list[tuple[str, dict[str, object]]] | None = None,
     model: str = "gpt-4o-mini",
 ) -> dict[str, object]:
-    """Build a canned OpenAI ChatCompletion response."""
+    """Build a canned OpenAI ChatCompletion response (still valid for ChatOpenAI)."""
     msg: dict[str, object] = {"role": "assistant", "content": content}
     if tool_calls:
         msg["tool_calls"] = [
