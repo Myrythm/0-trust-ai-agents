@@ -31,6 +31,7 @@ dev = [
   "respx>=0.21",
   "ruff>=0.3",
   "mypy>=1.8",
+  "types-PyYAML",
 ]
 
 [tool.hatch.build.targets.wheel]
@@ -49,6 +50,7 @@ ignore = ["S101", "E501"]
 
 [tool.ruff.lint.per-file-ignores]
 "tests/**/*.py" = ["S", "N", "B008", "B017"]
+"zta/policy.py" = ["UP042"]  # Decision(str, Enum) is per spec; use StrEnum in v2
 
 [tool.ruff.format]
 quote-style = "double"
