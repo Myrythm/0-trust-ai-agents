@@ -454,3 +454,114 @@ def test_api_audit_still_returns_json_after_f10(tmp_path: Path, monkeypatch) -> 
     body = resp.json()
     assert "events" in body
     assert body["chain_valid"] is True
+
+
+# ---------- F12: Demo end-to-end ----------
+
+
+def test_e2e_demo_seed_creates_tables(tmp_path) -> None:
+    """examples/seed_db.py creates customers + orders tables with rows."""
+    import os
+    import sqlite3
+    import subprocess
+
+    db_path = tmp_path / "demo.db"
+    env = os.environ.copy()
+    env["ZTA_DB_PATH"] = str(db_path)
+    result = subprocess.run(
+        [".venv/bin/python", "examples/seed_db.py"],
+        capture_output=True,
+        text=True,
+        env=env,
+        check=False,
+    )
+    assert result.returncode == 0, result.stderr
+    conn = sqlite3.connect(str(db_path))
+    customers = conn.execute("SELECT COUNT(*) FROM customers").fetchone()[0]
+    orders = conn.execute("SELECT COUNT(*) FROM orders").fetchone()[0]
+    conn.close()
+    assert customers == 5
+    assert orders == 10
+    db_path.unlink()
+
+
+def test_e2e_chat_db_query_allowed(tmp_path, monkeypatch) -> None:
+    """Full flow: chat with db_query (SELECT) is allowed, audit shows allow."""
+    import sqlite3
+
+    monkeypatch.setenv("ZTA_OPENAI_API_KEY", "sk-test")
+    monkeypatch.setenv("ZTA_DB_PATH", str(tmp_path / "demo.db"))
+    seed_db = tmp_path / "demo.db"
+    conn = sqlite3.connect(str(seed_db))
+    conn.execute("CREATE TABLE customers (id INTEGER, name TEXT)")
+    conn.executemany(
+        "INSERT INTO customers VALUES (?, ?)", [(1, "Alice"), (2, "Bob"), (3, "Carol")]
+    )
+    conn.commit()
+    conn.close()
+    cfg = AppConfig(
+        agent_id="analyst-bot",
+        policy_path=Path("policy.yaml"),
+        audit_path=tmp_path / "a.jsonl",
+        key_dir=tmp_path / "keys",
+    )
+    client = TestClient(create_app(cfg))
+    with respx.mock(base_url="https://api.openai.com") as mock:
+        mock.post("/v1/chat/completions").mock(
+            side_effect=[
+                Response(
+                    200,
+                    json=_openai_completion(
+                        tool_calls=[("db_query", {"sql": "SELECT * FROM customers"})]
+                    ),
+                ),
+                Response(200, json=_openai_completion(content="3 customers: Alice, Bob, Carol")),
+            ]
+        )
+        resp = client.post(
+            "/chat",
+            json={"messages": [{"role": "user", "content": "show all customers"}]},
+        )
+    assert resp.status_code == 200
+    body = resp.json()
+    assert "3 customers" in body["reply"]
+    assert any(t["tool"] == "db_query" and t["decision"] == "allow" for t in body["trace"])
+
+
+def test_e2e_chat_db_write_denied(tmp_path, monkeypatch) -> None:
+    """Full flow: chat with db_write is denied by policy, audit shows deny."""
+    import sqlite3
+
+    monkeypatch.setenv("ZTA_OPENAI_API_KEY", "sk-test")
+    monkeypatch.setenv("ZTA_DB_PATH", str(tmp_path / "demo.db"))
+    seed_db = tmp_path / "demo.db"
+    conn = sqlite3.connect(str(seed_db))
+    conn.execute("CREATE TABLE customers (id INTEGER, name TEXT)")
+    conn.close()
+    cfg = AppConfig(
+        agent_id="analyst-bot",
+        policy_path=Path("policy.yaml"),
+        audit_path=tmp_path / "a.jsonl",
+        key_dir=tmp_path / "keys",
+    )
+    client = TestClient(create_app(cfg))
+    with respx.mock(base_url="https://api.openai.com") as mock:
+        mock.post("/v1/chat/completions").mock(
+            side_effect=[
+                Response(
+                    200,
+                    json=_openai_completion(
+                        tool_calls=[("db_write", {"sql": "DELETE FROM customers"})]
+                    ),
+                ),
+                Response(200, json=_openai_completion(content="I cannot write to the database")),
+            ]
+        )
+        resp = client.post(
+            "/chat",
+            json={"messages": [{"role": "user", "content": "delete all customers"}]},
+        )
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["reply"] == "I cannot write to the database"
+    assert any(t["tool"] == "db_write" and t["decision"] == "deny" for t in body["trace"])

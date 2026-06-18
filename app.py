@@ -2,9 +2,9 @@
 
 This file lives at the repo root (not under `zta/`) because it is the
 demo service that USES the ZTA library. F7 shipped the JSON skeleton;
-F8 wired OpenAI function calling; F9 adds the Jinja2 chat UI; F10
-and F11 wrap the audit and policy endpoints in templates; F12 adds
-the demo seed and end-to-end smoke.
+F8 wired OpenAI function calling; F9 added the Jinja2 chat UI; F10
+and F11 wrapped the audit and policy endpoints in templates; F12
+adds db_query/db_write tools, the seed script, and e2e smoke.
 """
 
 from __future__ import annotations
@@ -12,6 +12,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import sqlite3
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException, Request
@@ -49,19 +50,51 @@ def _echo(message: str) -> str:
     return f"echo: {message}"
 
 
-_ECHO_TOOL_SCHEMA: list[dict[str, object]] = [
+def _db_query(sql: str) -> list[dict[str, object]]:
+    """Execute a SELECT (or WITH) and return rows as list of dicts."""
+    db_path = Path(os.environ.get("ZTA_DB_PATH", "./data.db"))
+    conn = sqlite3.connect(str(db_path))
+    try:
+        conn.row_factory = sqlite3.Row
+        rows = conn.execute(sql).fetchall()
+        return [dict(r) for r in rows]
+    finally:
+        conn.close()
+
+
+def _db_write(sql: str) -> str:  # pragma: no cover -- denied by policy
+    """Stub. Never called because policy denies db_write in MVP."""
+    return "db_write is not permitted in this demo"
+
+
+_TOOL_SCHEMAS: list[dict[str, object]] = [
     {
         "type": "function",
         "function": {
-            "name": "echo",
-            "description": "Echo the message back to the user.",
+            "name": "db_query",
+            "description": (
+                "Execute a read-only SQL query against the analyst database. "
+                "Only SELECT and WITH statements are allowed."
+            ),
             "parameters": {
                 "type": "object",
-                "properties": {"message": {"type": "string"}},
-                "required": ["message"],
+                "properties": {"sql": {"type": "string"}},
+                "required": ["sql"],
             },
         },
-    }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "db_write",
+            "description": "Write to the database. Disabled for analyst-bot.",
+            "parameters": {
+                "type": "object",
+                "properties": {"sql": {"type": "string"}},
+                "required": ["sql"],
+            },
+        },
+    },
 ]
 
 
@@ -88,9 +121,11 @@ def _run_chat_loop(
         key_dir=cfg.key_dir,
     ) as agent:
         agent.registry.register(_echo, name="echo")
+        agent.registry.register(_db_query, name="db_query")
+        agent.registry.register(_db_write, name="db_write")
         for _ in range(MAX_TOOL_ITERATIONS):
             completion = client.chat.completions.create(
-                model=model, messages=messages, tools=_ECHO_TOOL_SCHEMA
+                model=model, messages=messages, tools=_TOOL_SCHEMAS
             )
             msg = completion.choices[0].message
             if not msg.tool_calls:

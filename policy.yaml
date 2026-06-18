@@ -1,0 +1,13 @@
+agent: analyst-bot
+default: deny
+rules:
+  - tool: db_query
+    when: "args['sql'].strip().lower().split()[0] in ('select', 'with')"
+    decision: allow
+    reason: "SELECT/WITH queries are allowed for analyst-bot"
+  - tool: db_query
+    decision: deny
+    reason: "non-SELECT on db_query is not allowed"
+  - tool: db_write
+    decision: deny
+    reason: "db_write is disabled for analyst-bot"
