@@ -1,4 +1,4 @@
-"""Tests for the FastAPI app (F7 + F8)."""
+"""Tests for the FastAPI app (F7 + F8; F8 now uses LangChain ChatOpenAI)."""
 
 from __future__ import annotations
 
@@ -43,7 +43,7 @@ def _openai_completion(
     tool_calls: list[tuple[str, dict[str, object]]] | None = None,
     model: str = "gpt-4o-mini",
 ) -> dict[str, object]:
-    """Build a canned OpenAI ChatCompletion response."""
+    """Build a canned OpenAI ChatCompletion response (still valid for ChatOpenAI)."""
     msg: dict[str, object] = {"role": "assistant", "content": content}
     if tool_calls:
         msg["tool_calls"] = [
@@ -464,12 +464,13 @@ def test_e2e_demo_seed_creates_tables(tmp_path) -> None:
     import os
     import sqlite3
     import subprocess
+    import sys
 
     db_path = tmp_path / "demo.db"
     env = os.environ.copy()
     env["ZTA_DB_PATH"] = str(db_path)
     result = subprocess.run(
-        [".venv/bin/python", "examples/seed_db.py"],
+        [sys.executable, "examples/seed_db.py"],
         capture_output=True,
         text=True,
         env=env,
