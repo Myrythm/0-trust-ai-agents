@@ -38,9 +38,13 @@ def make_config(tmp_path: Path) -> AppConfig:
     )
 
 
-def _openai_completion(content=None, tool_calls=None, model="gpt-4o-mini"):
+def _openai_completion(
+    content: str | None = None,
+    tool_calls: list[tuple[str, dict[str, object]]] | None = None,
+    model: str = "gpt-4o-mini",
+) -> dict[str, object]:
     """Build a canned OpenAI ChatCompletion response."""
-    msg: dict = {"role": "assistant", "content": content}
+    msg: dict[str, object] = {"role": "assistant", "content": content}
     if tool_calls:
         msg["tool_calls"] = [
             {
