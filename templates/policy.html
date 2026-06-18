@@ -1,0 +1,41 @@
+{% extends "base.html" %}
+{% block title %}ZTA Policy{% endblock %}
+{% block content %}
+<h1>Policy</h1>
+
+{% if agent %}
+  <div class="banner banner-ok">Scoped to agent: <code>{{ agent }}</code></div>
+{% else %}
+  <div class="banner banner-ok">Applies to all agents</div>
+{% endif %}
+
+<section>
+  <h2>Default</h2>
+  <p>When no rule matches, the decision is: <span class="badge badge-{{ default }}">{{ default }}</span></p>
+</section>
+
+<section>
+  <h2>Rules</h2>
+  {% if rules %}
+    <ol class="policy-rules">
+      {% for r in rules %}
+        <li>
+          <div>
+            <code class="tool">{{ r.tool }}</code>
+            <span class="badge badge-{{ r.decision }}">{{ r.decision }}</span>
+            {% if r.when %}<code class="when">when: {{ r.when }}</code>{% endif %}
+          </div>
+          {% if r.reason %}<p class="reason">{{ r.reason }}</p>{% endif %}
+        </li>
+      {% endfor %}
+    </ol>
+  {% else %}
+    <p class="empty">No rules defined.</p>
+  {% endif %}
+</section>
+
+<section>
+  <h2>Raw YAML</h2>
+  <pre class="raw-yaml">{{ content }}</pre>
+</section>
+{% endblock %}

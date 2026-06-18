@@ -185,11 +185,33 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
             },
         )
 
-    @app.get("/policy")
-    async def policy_view() -> dict[str, str]:
+    @app.get("/policy", response_class=HTMLResponse)
+    async def policy_view(request: Request) -> Response:
         if not cfg.policy_path.exists():
-            raise HTTPException(status_code=500, detail=f"policy file not found: {cfg.policy_path}")
-        return {"content": cfg.policy_path.read_text()}
+            return HTMLResponse(
+                f"<html><body><h1>500</h1><p>policy file not found: {cfg.policy_path}</p></body></html>",
+                status_code=500,
+            )
+        import yaml as _yaml
+
+        raw = cfg.policy_path.read_text()
+        try:
+            parsed = _yaml.safe_load(raw) or {}
+        except _yaml.YAMLError as exc:
+            return HTMLResponse(
+                f"<html><body><h1>500</h1><p>invalid YAML: {exc}</p></body></html>",
+                status_code=500,
+            )
+        return templates.TemplateResponse(
+            request,
+            "policy.html",
+            {
+                "agent": parsed.get("agent"),
+                "content": raw,
+                "rules": parsed.get("rules") or [],
+                "default": parsed.get("default", "deny"),
+            },
+        )
 
     return app
 
