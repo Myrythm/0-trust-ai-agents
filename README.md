@@ -21,8 +21,8 @@ A Zero Trust control plane for AI agents that gates every tool invocation throug
 
 ```bash
 # 1. Install
-python -m venv .venv && source .venv/bin/activate
-pip install -e ".[dev]"
+uv venv && source .venv/bin/activate
+uv pip install -e ".[dev]"
 
 # 2. Seed the demo database (5 customers, 10 orders)
 python examples/seed_db.py
