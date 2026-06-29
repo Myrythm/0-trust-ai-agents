@@ -670,3 +670,80 @@ section { margin-bottom: 1.75rem; }
   .page { padding: 1.25rem 1rem 3rem; }
   .audit-table .reason { max-width: 16ch; }
 }
+
+/* =========================== Auth ======================================= */
+
+.auth-wrap {
+  min-height: 100%;
+  display: grid;
+  place-items: center;
+  padding: 2rem 1.25rem;
+}
+.auth-card {
+  width: 100%;
+  max-width: 360px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-md);
+  padding: 2rem 1.75rem;
+  text-align: center;
+}
+.auth-logo { font-size: 2.25rem; }
+.auth-card h1 { margin: 0.5rem 0 0.15rem; font-size: 1.5rem; font-weight: 700; }
+.auth-sub { margin: 0 0 1.5rem; color: var(--muted); font-size: 0.9rem; }
+.auth-error {
+  margin: 0 0 1rem;
+  padding: 0.55rem 0.8rem;
+  border-radius: var(--radius-sm);
+  background: var(--deny-tint);
+  color: var(--deny);
+  border: 1px solid var(--deny-line);
+  font-size: 0.88rem;
+}
+.auth-form { display: flex; flex-direction: column; gap: 0.85rem; text-align: left; }
+.auth-form label { display: flex; flex-direction: column; gap: 0.3rem; font-size: 0.82rem; color: var(--muted); }
+.auth-form input {
+  padding: 0.6rem 0.7rem;
+  border: 1px solid var(--border-2);
+  border-radius: var(--radius-sm);
+  background: var(--bg);
+  color: var(--fg);
+  font: inherit;
+  font-size: 0.95rem;
+}
+.auth-form input:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--ring); }
+.auth-form button {
+  margin-top: 0.35rem;
+  padding: 0.65rem 1rem;
+  background: var(--accent);
+  color: var(--accent-fg);
+  border: none;
+  border-radius: var(--radius-sm);
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+.auth-form button:hover { filter: brightness(1.07); }
+
+/* Sidebar user chip */
+.user-chip {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem 0.6rem;
+  margin-bottom: 0.5rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+}
+.user-chip .user-meta { display: flex; flex-direction: column; line-height: 1.15; min-width: 0; }
+.user-chip .user-meta b { font-size: 0.85rem; overflow: hidden; text-overflow: ellipsis; }
+.user-chip .user-meta small { color: var(--muted); font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.04em; }
+.user-chip .logout-link { margin-left: auto; color: var(--muted); font-size: 1rem; text-decoration: none; }
+.user-chip .logout-link:hover { color: var(--deny); }
+
+@media (max-width: 860px) {
+  .user-chip { margin-bottom: 0; padding: 0.4rem; }
+  .user-chip .user-meta { display: none; }
+}

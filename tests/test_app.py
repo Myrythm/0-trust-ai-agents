@@ -40,7 +40,23 @@ def make_config(tmp_path: Path) -> AppConfig:
         ),
         audit_path=tmp_path / "a.jsonl",
         key_dir=tmp_path / "keys",
+        roles_path=Path("roles.yaml"),
+        users_db_path=tmp_path / "users.db",
+        secret_key="test-secret",
     )
+
+
+def client_as(cfg: AppConfig, role: str = "manager") -> TestClient:
+    """Build the app, seed a user with `role`, log in, and return the client."""
+    from zta.users import UserStore
+
+    store = UserStore(cfg.users_db_path)
+    if store.get_user(role) is None:
+        store.create_user(role, "pw", role)
+    client = TestClient(create_app(cfg))
+    resp = client.post("/login", data={"username": role, "password": "pw"}, follow_redirects=False)
+    assert resp.status_code == 303
+    return client
 
 
 def _openai_completion(
@@ -139,9 +155,9 @@ def test_create_app_returns_fastapi_instance() -> None:
     assert isinstance(app, FastAPI)
 
 
-def test_index_returns_service_metadata() -> None:
+def test_index_returns_service_metadata(tmp_path: Path) -> None:
     """F9 changed / to return HTML; the service name is in the page title."""
-    client = TestClient(create_app())
+    client = client_as(make_config(tmp_path))
     resp = client.get("/")
     assert resp.status_code == 200
     assert "ZTA Chat" in resp.text
@@ -150,7 +166,7 @@ def test_index_returns_service_metadata() -> None:
 def test_chat_runs_echo_tool_through_zta(tmp_path: Path, monkeypatch) -> None:
     monkeypatch.setenv("ZTA_OPENAI_API_KEY", "sk-test")
     cfg = make_config(tmp_path)
-    client = TestClient(create_app(cfg))
+    client = client_as(cfg)
     with respx.mock(base_url="https://api.openai.com") as mock:
         mock.post("/v1/chat/completions").mock(
             side_effect=[
@@ -183,7 +199,7 @@ def test_chat_deny_via_runtime_call(tmp_path: Path, monkeypatch) -> None:
         audit_path=tmp_path / "a.jsonl",
         key_dir=tmp_path / "keys",
     )
-    client = TestClient(create_app(cfg))
+    client = client_as(cfg)
     with respx.mock(base_url="https://api.openai.com") as mock:
         mock.post("/v1/chat/completions").mock(
             side_effect=[
@@ -201,7 +217,7 @@ def test_chat_deny_via_runtime_call(tmp_path: Path, monkeypatch) -> None:
 def test_chat_audits_to_configured_path(tmp_path: Path, monkeypatch) -> None:
     monkeypatch.setenv("ZTA_OPENAI_API_KEY", "sk-test")
     cfg = make_config(tmp_path)
-    client = TestClient(create_app(cfg))
+    client = client_as(cfg)
     with respx.mock(base_url="https://api.openai.com") as mock:
         mock.post("/v1/chat/completions").mock(
             side_effect=[
@@ -218,7 +234,7 @@ def test_chat_audits_to_configured_path(tmp_path: Path, monkeypatch) -> None:
 def test_api_audit_returns_events_and_chain_validity(tmp_path: Path, monkeypatch) -> None:
     monkeypatch.setenv("ZTA_OPENAI_API_KEY", "sk-test")
     cfg = make_config(tmp_path)
-    client = TestClient(create_app(cfg))
+    client = client_as(cfg)
     with respx.mock(base_url="https://api.openai.com") as mock:
         mock.post("/v1/chat/completions").mock(
             side_effect=[
@@ -238,7 +254,7 @@ def test_api_audit_returns_events_and_chain_validity(tmp_path: Path, monkeypatch
 def test_audit_endpoint_returns_chain_status(tmp_path: Path) -> None:
     """F10 changed /audit to HTML; chain status is now in the page itself."""
     cfg = make_config(tmp_path)
-    client = TestClient(create_app(cfg))
+    client = client_as(cfg)
     resp = client.get("/audit")
     assert resp.status_code == 200
     body = resp.text
@@ -249,7 +265,7 @@ def test_audit_endpoint_returns_chain_status(tmp_path: Path) -> None:
 def test_policy_page_renders_html_with_yaml(tmp_path: Path) -> None:
     """F11 changed /policy to HTML; F7's policy test is replaced."""
     cfg = make_config(tmp_path)
-    client = TestClient(create_app(cfg))
+    client = client_as(cfg)
     resp = client.get("/policy")
     assert resp.status_code == 200
     assert "text/html" in resp.headers["content-type"]
@@ -264,7 +280,7 @@ def test_policy_page_renders_html_with_yaml(tmp_path: Path) -> None:
 
 def test_policy_page_renders_html(tmp_path: Path) -> None:
     cfg = make_config(tmp_path)
-    client = TestClient(create_app(cfg))
+    client = client_as(cfg)
     resp = client.get("/policy")
     assert resp.status_code == 200
     assert "text/html" in resp.headers["content-type"]
@@ -284,7 +300,7 @@ def test_policy_page_shows_default(tmp_path: Path) -> None:
     cfg = AppConfig(
         agent_id="bot", policy_path=pol, audit_path=tmp_path / "a.jsonl", key_dir=tmp_path / "keys"
     )
-    client = TestClient(create_app(cfg))
+    client = client_as(cfg)
     resp = client.get("/policy")
     assert resp.status_code == 200
     assert "deny" in resp.text
@@ -303,7 +319,7 @@ def test_policy_page_shows_agent_scope(tmp_path: Path) -> None:
     cfg = AppConfig(
         agent_id="bot", policy_path=pol, audit_path=tmp_path / "a.jsonl", key_dir=tmp_path / "keys"
     )
-    client = TestClient(create_app(cfg))
+    client = client_as(cfg)
     resp = client.get("/policy")
     assert resp.status_code == 200
     assert "analyst-bot" in resp.text
@@ -316,14 +332,14 @@ def test_policy_page_missing_file_returns_500(tmp_path: Path) -> None:
         audit_path=tmp_path / "a.jsonl",
         key_dir=tmp_path / "keys",
     )
-    client = TestClient(create_app(cfg))
+    client = client_as(cfg)
     resp = client.get("/policy")
     assert resp.status_code == 500
     assert "policy file not found" in resp.text
 
 
-def test_chat_empty_messages_returns_400() -> None:
-    client = TestClient(create_app())
+def test_chat_empty_messages_returns_400(tmp_path: Path) -> None:
+    client = client_as(make_config(tmp_path))
     resp = client.post("/chat", json={"messages": []})
     assert resp.status_code in (400, 422)
 
@@ -331,7 +347,7 @@ def test_chat_empty_messages_returns_400() -> None:
 def test_chat_openai_no_function_call_returns_content(tmp_path: Path, monkeypatch) -> None:
     monkeypatch.setenv("ZTA_OPENAI_API_KEY", "sk-test")
     cfg = make_config(tmp_path)
-    client = TestClient(create_app(cfg))
+    client = client_as(cfg)
     with respx.mock(base_url="https://api.openai.com") as mock:
         mock.post("/v1/chat/completions").mock(
             return_value=Response(200, json=_openai_completion(content="plain answer"))
@@ -345,7 +361,7 @@ def test_chat_openai_no_function_call_returns_content(tmp_path: Path, monkeypatc
 def test_chat_openai_missing_api_key_returns_500(tmp_path: Path, monkeypatch) -> None:
     monkeypatch.delenv("ZTA_OPENAI_API_KEY", raising=False)
     cfg = make_config(tmp_path)
-    client = TestClient(create_app(cfg))
+    client = client_as(cfg)
     resp = client.post("/chat", json={"messages": [{"role": "user", "content": "x"}]})
     assert resp.status_code == 500
     assert "ZTA_OPENAI_API_KEY" in resp.json()["detail"]
@@ -365,7 +381,7 @@ def test_chat_openai_tool_deny_propagates(tmp_path: Path, monkeypatch) -> None:
     cfg = AppConfig(
         agent_id="bot", policy_path=pol, audit_path=tmp_path / "a.jsonl", key_dir=tmp_path / "keys"
     )
-    client = TestClient(create_app(cfg))
+    client = client_as(cfg)
     with respx.mock(base_url="https://api.openai.com") as mock:
         mock.post("/v1/chat/completions").mock(
             side_effect=[
@@ -385,7 +401,7 @@ def test_chat_openai_tool_deny_propagates(tmp_path: Path, monkeypatch) -> None:
 
 def test_index_renders_chat_html(tmp_path: Path, monkeypatch) -> None:
     monkeypatch.setenv("ZTA_OPENAI_API_KEY", "sk-test")
-    client = TestClient(create_app(make_config(tmp_path)))
+    client = client_as(make_config(tmp_path))
     resp = client.get("/")
     assert resp.status_code == 200
     assert "text/html" in resp.headers["content-type"]
@@ -397,7 +413,7 @@ def test_index_renders_chat_html(tmp_path: Path, monkeypatch) -> None:
 
 def test_chat_html_includes_base_layout(tmp_path: Path, monkeypatch) -> None:
     monkeypatch.setenv("ZTA_OPENAI_API_KEY", "sk-test")
-    client = TestClient(create_app(make_config(tmp_path)))
+    client = client_as(make_config(tmp_path))
     resp = client.get("/")
     assert resp.status_code == 200
     assert "<nav>" in resp.text
@@ -411,7 +427,7 @@ def test_chat_html_includes_base_layout(tmp_path: Path, monkeypatch) -> None:
 def test_audit_page_renders_html(tmp_path: Path, monkeypatch) -> None:
     monkeypatch.setenv("ZTA_OPENAI_API_KEY", "sk-test")
     cfg = make_config(tmp_path)
-    client = TestClient(create_app(cfg))
+    client = client_as(cfg)
     resp = client.get("/audit")
     assert resp.status_code == 200
     assert "text/html" in resp.headers["content-type"]
@@ -421,7 +437,7 @@ def test_audit_page_renders_html(tmp_path: Path, monkeypatch) -> None:
 def test_audit_page_shows_empty_state(tmp_path: Path, monkeypatch) -> None:
     monkeypatch.setenv("ZTA_OPENAI_API_KEY", "sk-test")
     cfg = make_config(tmp_path)
-    client = TestClient(create_app(cfg))
+    client = client_as(cfg)
     resp = client.get("/audit")
     assert resp.status_code == 200
     assert "No events yet" in resp.text
@@ -430,7 +446,7 @@ def test_audit_page_shows_empty_state(tmp_path: Path, monkeypatch) -> None:
 def test_audit_page_lists_events(tmp_path: Path, monkeypatch) -> None:
     monkeypatch.setenv("ZTA_OPENAI_API_KEY", "sk-test")
     cfg = make_config(tmp_path)
-    client = TestClient(create_app(cfg))
+    client = client_as(cfg)
     with respx.mock(base_url="https://api.openai.com") as mock:
         mock.post("/v1/chat/completions").mock(
             side_effect=[
@@ -451,7 +467,7 @@ def test_audit_page_lists_events(tmp_path: Path, monkeypatch) -> None:
 def test_api_audit_still_returns_json_after_f10(tmp_path: Path, monkeypatch) -> None:
     monkeypatch.setenv("ZTA_OPENAI_API_KEY", "sk-test")
     cfg = make_config(tmp_path)
-    client = TestClient(create_app(cfg))
+    client = client_as(cfg)
     with respx.mock(base_url="https://api.openai.com") as mock:
         mock.post("/v1/chat/completions").mock(
             side_effect=[
@@ -530,7 +546,7 @@ def test_e2e_chat_db_query_allowed(tmp_path, monkeypatch) -> None:
         audit_path=tmp_path / "a.jsonl",
         key_dir=tmp_path / "keys",
     )
-    client = TestClient(create_app(cfg))
+    client = client_as(cfg)
     with respx.mock(base_url="https://api.openai.com") as mock:
         mock.post("/v1/chat/completions").mock(
             side_effect=[
@@ -569,7 +585,7 @@ def test_e2e_chat_db_write_denied(tmp_path, monkeypatch) -> None:
         audit_path=tmp_path / "a.jsonl",
         key_dir=tmp_path / "keys",
     )
-    client = TestClient(create_app(cfg))
+    client = client_as(cfg)
     with respx.mock(base_url="https://api.openai.com") as mock:
         mock.post("/v1/chat/completions").mock(
             side_effect=[
@@ -612,7 +628,7 @@ def _parse_sse(resp_text: str) -> list[tuple[str, dict[str, object]]]:
 def test_chat_stream_returns_sse(tmp_path: Path, monkeypatch) -> None:
     monkeypatch.setenv("ZTA_OPENAI_API_KEY", "sk-test")
     cfg = make_config(tmp_path)
-    client = TestClient(create_app(cfg))
+    client = client_as(cfg)
     fake_model = FakeStreamingChatModel(responses=[AIMessage(content="hello")])
     monkeypatch.setattr("app._get_chat_model", lambda: fake_model)
     resp = client.post("/chat/stream", json={"messages": [{"role": "user", "content": "hi"}]})
@@ -625,7 +641,7 @@ def test_chat_stream_returns_sse(tmp_path: Path, monkeypatch) -> None:
 def test_chat_stream_emits_tokens_and_trace(tmp_path: Path, monkeypatch) -> None:
     monkeypatch.setenv("ZTA_OPENAI_API_KEY", "sk-test")
     cfg = make_config(tmp_path)
-    client = TestClient(create_app(cfg))
+    client = client_as(cfg)
     fake_model = FakeStreamingChatModel(
         responses=[
             AIMessage(
@@ -649,7 +665,7 @@ def test_chat_stream_emits_tokens_and_trace(tmp_path: Path, monkeypatch) -> None
 def test_chat_stream_empty_messages_returns_400(tmp_path: Path, monkeypatch) -> None:
     monkeypatch.setenv("ZTA_OPENAI_API_KEY", "sk-test")
     cfg = make_config(tmp_path)
-    client = TestClient(create_app(cfg))
+    client = client_as(cfg)
     resp = client.post("/chat/stream", json={"messages": []})
     assert resp.status_code in (400, 422)
 
@@ -658,7 +674,7 @@ def test_chat_stream_empty_messages_returns_400(tmp_path: Path, monkeypatch) -> 
 async def test_chat_stream_missing_api_key_returns_error_event(tmp_path: Path, monkeypatch) -> None:
     monkeypatch.delenv("ZTA_OPENAI_API_KEY", raising=False)
     cfg = make_config(tmp_path)
-    client = TestClient(create_app(cfg))
+    client = client_as(cfg)
     resp = client.post("/chat/stream", json={"messages": [{"role": "user", "content": "hi"}]})
     assert resp.status_code == 200
     assert "error" in resp.text
