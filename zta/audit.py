@@ -40,6 +40,7 @@ class AuditEvent(BaseModel):
     resource: str
     decision: str
     reason: str
+    user: str = ""
     prev_hash: str = GENESIS_HASH
     this_hash: str = ""
 
@@ -66,6 +67,7 @@ class Audit:
         resource: str,
         decision: str,
         reason: str,
+        user: str = "",
     ) -> AuditEvent:
         prev_hash = self._last_hash()
         event = AuditEvent(
@@ -75,6 +77,7 @@ class Audit:
             resource=resource,
             decision=decision,
             reason=reason,
+            user=user,
             prev_hash=prev_hash,
         )
         event.this_hash = event.compute_this_hash()

@@ -11,8 +11,9 @@ Workflow per task: GitHub issue → develop → test → push `feature/<slug>` �
 | 2 | User store (`zta/users.py`) | #30 | #31 | ✅ |
 | — | Chinook DB swap (`examples/seed_db.py`) | #32 | #33 | ✅ |
 | — | Domain roles + table scoping (manager/sales/catalog) | #34 | #35 | ✅ |
-| 3 | Signed session cookie (`zta/webauth.py`) | #36 | — | ☐ |
-| 4 | Audit user attribution (`zta/audit.py`) | — | — | ☐ |
+| — | argon2id password hashing (`argon2-cffi`) | #38 | #39 | ✅ |
+| 3 | Signed session cookie (`zta/webauth.py`) | #36 | #37 | ✅ |
+| 4 | Audit user attribution (`zta/audit.py`) | #40 | — | ☐ |
 | 5 | Runtime RBAC enforcement (`zta/runtime.py`) | — | — | ☐ |
 | 6 | Auth & route guards (`app.py`, login, seed) | — | — | ☐ |
 | 7 | Table-scoped `db_query` (SQLite authorizer) | — | — | ☐ |
