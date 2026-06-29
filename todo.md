@@ -5,15 +5,18 @@ Spec: `docs/superpowers/specs/2026-06-29-rbac-users-design.md`
 
 Workflow per task: GitHub issue → develop → test → push `feature/<slug>` → open PR → **user reviews & merges** → mark done here.
 
-| # | Task | Branch | Issue | PR | Merged |
-|---|------|--------|-------|----|:------:|
-| 1 | RBAC permission matrix (`zta/rbac.py` + `roles.yaml`) | `feature/rbac-matrix` | #28 | #29 | ✅ |
-| 2 | User store (`zta/users.py`) | `feature/user-store` | #30 | — | ☐ |
-| 3 | Signed session cookie (`zta/webauth.py`) | `feature/webauth-cookie` | — | — | ☐ |
-| 4 | Audit user attribution (`zta/audit.py`) | `feature/audit-user` | — | — | ☐ |
-| 5 | Runtime RBAC enforcement (`zta/runtime.py`) | `feature/runtime-rbac` | — | — | ☐ |
-| 6 | Auth & route guards (`app.py`, login, seed) | `feature/auth-guards` | — | — | ☐ |
-| 7 | Admin pages `/users` & `/roles` | `feature/admin-pages` | — | — | ☐ |
-| 8 | Documentation & config | `feature/rbac-docs` | — | — | ☐ |
+| # | Task | Issue | PR | Merged |
+|---|------|-------|----|:------:|
+| 1 | RBAC permission matrix (`zta/rbac.py` + `roles.yaml`) | #28 | #29 | ✅ |
+| 2 | User store (`zta/users.py`) | #30 | #31 | ✅ |
+| — | Chinook DB swap (`examples/seed_db.py`) | #32 | #33 | ✅ |
+| — | Domain roles + table scoping (manager/sales/catalog) | #34 | #35 | ✅ |
+| 3 | Signed session cookie (`zta/webauth.py`) | #36 | — | ☐ |
+| 4 | Audit user attribution (`zta/audit.py`) | — | — | ☐ |
+| 5 | Runtime RBAC enforcement (`zta/runtime.py`) | — | — | ☐ |
+| 6 | Auth & route guards (`app.py`, login, seed) | — | — | ☐ |
+| 7 | Table-scoped `db_query` (SQLite authorizer) | — | — | ☐ |
+| 8 | Admin pages `/users` & `/roles` | — | — | ☐ |
+| 9 | Documentation & config | — | — | ☐ |
 
-_Fill in Issue/PR links as each is opened. Tick "Merged" only after the user merges._
+_Tick "Merged" only after the user merges. Seed default accounts: manager/sales/catalog._
