@@ -132,3 +132,33 @@ def test_audit_exposes_no_update_or_delete_methods(tmp_path: Path) -> None:
 
 def test_audit_error_is_zta_error() -> None:
     assert issubclass(AuditError, ZTAError)
+
+
+def test_append_records_user(tmp_path: Path) -> None:
+    a = Audit(tmp_path / "audit.jsonl")
+    event = a.append(
+        agent_id="bot",
+        request_id="r1",
+        action="tool:db_query",
+        resource="tool:db_query",
+        decision="allow",
+        reason="ok",
+        user="alice",
+    )
+    assert event.user == "alice"
+    assert a.verify_chain() is True
+    assert a.read_all()[0].user == "alice"
+
+
+def test_append_user_defaults_empty(tmp_path: Path) -> None:
+    a = Audit(tmp_path / "audit.jsonl")
+    event = a.append(
+        agent_id="bot",
+        request_id="r1",
+        action="x",
+        resource="x",
+        decision="allow",
+        reason="ok",
+    )
+    assert event.user == ""
+    assert a.verify_chain() is True
