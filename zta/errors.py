@@ -30,3 +30,7 @@ class AuditError(ZTAError):
 
 class ToolError(ZTAError):
     """Tool registry or invocation failed."""
+
+
+class RbacError(ZTAError):
+    """RBAC role matrix could not be loaded, or is invalid."""

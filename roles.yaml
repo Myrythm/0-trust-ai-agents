@@ -1,0 +1,10 @@
+roles:
+  admin:
+    pages: [chat, audit, policy, users, roles]
+    tools: [echo, db_query, db_write]
+  analyst:
+    pages: [chat, audit]
+    tools: [echo, db_query]
+  viewer:
+    pages: [chat]
+    tools: []
