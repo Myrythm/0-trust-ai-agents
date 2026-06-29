@@ -31,6 +31,7 @@
           <span class="brand-sub">Control Plane</span>
         </a>
 
+        {% if current_user %}
         <button id="new-chat" class="new-chat" type="button">
           <span class="plus">+</span> <span class="nc-label">New chat</span>
         </button>
@@ -39,16 +40,28 @@
           <a href="/" class="nav-link {% block nav_chat %}{% endblock %}">
             <span class="nav-ico">💬</span> <span class="nav-label">Chat</span>
           </a>
+          {% if 'audit' in allowed_pages %}
           <a href="/audit" class="nav-link {% block nav_audit %}{% endblock %}">
             <span class="nav-ico">📜</span> <span class="nav-label">Audit</span>
           </a>
+          {% endif %}
+          {% if 'policy' in allowed_pages %}
           <a href="/policy" class="nav-link {% block nav_policy %}{% endblock %}">
             <span class="nav-ico">🛡️</span> <span class="nav-label">Policy</span>
           </a>
+          {% endif %}
         </nav>
+        {% endif %}
       </div>
 
       <div class="sidebar-bottom">
+        {% if current_user %}
+        <div class="user-chip">
+          <span class="user-ico">👤</span>
+          <span class="user-meta"><b>{{ current_user.username }}</b><small>{{ current_user.role }}</small></span>
+          <a href="/logout" class="logout-link" title="Sign out">⏻</a>
+        </div>
+        {% endif %}
         <button id="theme-toggle" class="theme-toggle" type="button" aria-label="Toggle theme">
           <span class="theme-ico theme-ico-light">☀️</span>
           <span class="theme-ico theme-ico-dark">🌙</span>

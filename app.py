@@ -17,13 +17,14 @@ from __future__ import annotations
 import json
 import logging
 import os
+import secrets
 import sqlite3
 from collections.abc import AsyncIterator
 from pathlib import Path
 
 from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException, Request
-from fastapi.responses import HTMLResponse, JSONResponse, StreamingResponse
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, ToolMessage
@@ -33,11 +34,16 @@ from pydantic import BaseModel, Field
 from starlette.responses import Response
 from zta.agent_graph import build_zta_graph
 from zta.audit import Audit
+from zta.rbac import KNOWN_PAGES, Permissions
 from zta.runtime import session
+from zta.users import UserStore
+from zta.webauth import sign_session, verify_session
 
 load_dotenv()
 
 _log = logging.getLogger(__name__)
+
+SESSION_COOKIE = "zta_session"
 
 
 class AppConfig(BaseModel):
@@ -45,6 +51,11 @@ class AppConfig(BaseModel):
     policy_path: Path = Field(default_factory=lambda: Path("./policy.yaml"))
     audit_path: Path = Field(default_factory=lambda: Path("./audit.jsonl"))
     key_dir: Path = Field(default_factory=lambda: Path("./.zta/keys"))
+    roles_path: Path = Field(default_factory=lambda: Path("./roles.yaml"))
+    users_db_path: Path = Field(
+        default_factory=lambda: Path(os.environ.get("ZTA_DB_PATH", "./data.db"))
+    )
+    secret_key: str = Field(default_factory=lambda: os.environ.get("ZTA_SECRET_KEY", ""))
 
 
 class ChatRequest(BaseModel):
@@ -141,9 +152,25 @@ def _sse_event(event_type: str, data: dict[str, object]) -> str:
     return f"event: {event_type}\ndata: {json.dumps(data)}\n\n"
 
 
+def _current_user(request: Request, cfg: AppConfig) -> dict[str, str] | None:
+    """Return the signed-in user payload from the session cookie, or None."""
+    token = request.cookies.get(SESSION_COOKIE)
+    if not token:
+        return None
+    return verify_session(token, cfg.secret_key)
+
+
+def _allowed_pages(perms: Permissions, role: str) -> list[str]:
+    return [p for p in sorted(KNOWN_PAGES) if perms.page_allowed(role, p)]
+
+
 async def _stream_chat(
     messages: list[dict[str, object]],
     cfg: AppConfig,
+    *,
+    user: str,
+    role: str,
+    permissions: Permissions,
 ) -> AsyncIterator[str]:
     """Stream LangGraph events as SSE lines (token, trace, error, end)."""
     try:
@@ -157,6 +184,9 @@ async def _stream_chat(
         policy=cfg.policy_path,
         audit=cfg.audit_path,
         key_dir=cfg.key_dir,
+        user=user,
+        role=role,
+        permissions=permissions,
     ) as agent:
         for t in _TOOLS:
             agent.registry.register(t)
@@ -181,6 +211,10 @@ async def _stream_chat(
 async def _run_chat(
     messages: list[dict[str, object]],
     cfg: AppConfig,
+    *,
+    user: str,
+    role: str,
+    permissions: Permissions,
 ) -> tuple[list[dict[str, object]], str, list[dict[str, object]]]:
     """Run the LangGraph agent and return (final_messages, reply, trace_dicts)."""
     model = _get_chat_model()
@@ -189,6 +223,9 @@ async def _run_chat(
         policy=cfg.policy_path,
         audit=cfg.audit_path,
         key_dir=cfg.key_dir,
+        user=user,
+        role=role,
+        permissions=permissions,
     ) as agent:
         for t in _TOOLS:
             agent.registry.register(t)
@@ -204,17 +241,63 @@ async def _run_chat(
 
 def create_app(config: AppConfig | None = None) -> FastAPI:
     cfg = config or AppConfig()
+    if not cfg.secret_key:
+        cfg = cfg.model_copy(update={"secret_key": secrets.token_hex(32)})
+        _log.warning("ZTA_SECRET_KEY not set; using an ephemeral key (sessions reset on restart)")
+    perms = Permissions.load(cfg.roles_path)
+    users = UserStore(cfg.users_db_path)
+
     app = FastAPI(title="ZTA Control Plane", version="0.1.0")
     app.state.config = cfg
     app.mount("/static", StaticFiles(directory="static"), name="static")
     templates = Jinja2Templates(directory="templates")
 
+    def base_ctx(user: dict[str, str]) -> dict[str, object]:
+        return {"current_user": user, "allowed_pages": _allowed_pages(perms, user["role"])}
+
+    # ---------- auth ----------
+
+    @app.get("/login", response_class=HTMLResponse)
+    async def login_form(request: Request) -> Response:
+        return templates.TemplateResponse(request, "login.html", {"error": None})
+
+    @app.post("/login")
+    async def login_submit(request: Request) -> Response:
+        form = await request.form()
+        username = str(form.get("username", ""))
+        password = str(form.get("password", ""))
+        user = users.get_user(username)
+        if user is None or not users.verify_password(username, password):
+            return templates.TemplateResponse(
+                request, "login.html", {"error": "Invalid username or password"}, status_code=401
+            )
+        token = sign_session({"username": user.username, "role": user.role}, cfg.secret_key)
+        resp = RedirectResponse("/", status_code=303)
+        resp.set_cookie(SESSION_COOKIE, token, httponly=True, samesite="lax")
+        return resp
+
+    @app.get("/logout")
+    async def logout() -> Response:
+        resp = RedirectResponse("/login", status_code=303)
+        resp.delete_cookie(SESSION_COOKIE)
+        return resp
+
+    # ---------- chat ----------
+
     @app.get("/", response_class=HTMLResponse)
     async def index(request: Request) -> Response:
-        return templates.TemplateResponse(request, "chat.html", {"messages": [], "trace": []})
+        user = _current_user(request, cfg)
+        if user is None:
+            return RedirectResponse("/login", status_code=303)
+        return templates.TemplateResponse(
+            request, "chat.html", {"messages": [], "trace": [], **base_ctx(user)}
+        )
 
     @app.post("/chat")
     async def chat(request: Request) -> Response:
+        user = _current_user(request, cfg)
+        if user is None:
+            raise HTTPException(status_code=401, detail="login required")
         data = await request.json()
         req_messages = data.get("messages", [])
         if not req_messages:
@@ -222,12 +305,17 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
         messages_in: list[dict[str, object]] = [
             {"role": m["role"], "content": m["content"]} for m in req_messages
         ]
-        messages_out, reply, trace = await _run_chat(messages_in, cfg)
+        messages_out, reply, trace = await _run_chat(
+            messages_in, cfg, user=user["username"], role=user["role"], permissions=perms
+        )
         return JSONResponse({"reply": reply, "trace": trace, "messages": messages_out})
 
     @app.post("/chat/stream")
-    async def chat_stream(request: Request) -> StreamingResponse:
+    async def chat_stream(request: Request) -> Response:
         """Stream the chat response as Server-Sent Events."""
+        user = _current_user(request, cfg)
+        if user is None:
+            raise HTTPException(status_code=401, detail="login required")
         data = await request.json()
         req_messages = data.get("messages", [])
         if not req_messages:
@@ -236,20 +324,36 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
             {"role": m["role"], "content": m["content"]} for m in req_messages
         ]
         return StreamingResponse(
-            _stream_chat(messages_in, cfg),
+            _stream_chat(
+                messages_in, cfg, user=user["username"], role=user["role"], permissions=perms
+            ),
             media_type="text/event-stream",
         )
 
+    # ---------- audit ----------
+
     @app.get("/api/audit")
-    async def api_audit() -> dict[str, object]:
+    async def api_audit(request: Request) -> Response:
+        user = _current_user(request, cfg)
+        if user is None:
+            raise HTTPException(status_code=401, detail="login required")
+        if not perms.page_allowed(user["role"], "audit"):
+            raise HTTPException(status_code=403, detail="forbidden")
         audit = Audit(cfg.audit_path)
-        return {
-            "events": [e.model_dump(mode="json") for e in audit.read_all()],
-            "chain_valid": audit.verify_chain(),
-        }
+        return JSONResponse(
+            {
+                "events": [e.model_dump(mode="json") for e in audit.read_all()],
+                "chain_valid": audit.verify_chain(),
+            }
+        )
 
     @app.get("/audit", response_class=HTMLResponse)
     async def audit_view(request: Request) -> Response:
+        user = _current_user(request, cfg)
+        if user is None:
+            return RedirectResponse("/login", status_code=303)
+        if not perms.page_allowed(user["role"], "audit"):
+            return HTMLResponse("403 Forbidden", status_code=403)
         audit = Audit(cfg.audit_path)
         events = audit.read_all()
         events_sorted = list(reversed(events))
@@ -261,11 +365,19 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
                 "chain_status": "valid" if audit.verify_chain() else "tampered",
                 "events": [e.model_dump(mode="json") for e in events_sorted],
                 "event_count": len(events),
+                **base_ctx(user),
             },
         )
 
+    # ---------- policy ----------
+
     @app.get("/policy", response_class=HTMLResponse)
     async def policy_view(request: Request) -> Response:
+        user = _current_user(request, cfg)
+        if user is None:
+            return RedirectResponse("/login", status_code=303)
+        if not perms.page_allowed(user["role"], "policy"):
+            return HTMLResponse("403 Forbidden", status_code=403)
         if not cfg.policy_path.exists():
             return HTMLResponse(
                 f"<html><body><h1>500</h1><p>policy file not found: {cfg.policy_path}</p></body></html>",
@@ -289,6 +401,7 @@ def create_app(config: AppConfig | None = None) -> FastAPI:
                 "content": raw,
                 "rules": parsed.get("rules") or [],
                 "default": parsed.get("default", "deny"),
+                **base_ctx(user),
             },
         )
 
