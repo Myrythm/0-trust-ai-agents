@@ -20,6 +20,24 @@ We want to upgrade the project so that **multiple users authenticate, each with 
 - **Admin can manage users in-app** (create / list / delete) via an admin-only page.
 - RBAC is expressed as a **separate permission matrix** (Approach B), chosen for governance/visibility — admins must be able to see "who can do what" at a glance — and for clean separation between human RBAC and agent tool-safety policy.
 
+## Revision (2026-06-29): Chinook domain roles + table-level scoping
+
+After swapping the demo data to the **Chinook** media-store database, the generic `admin/analyst/viewer` roles were replaced with **domain-themed, data-scoped** roles. This section is authoritative; where older text below still says admin/analyst/viewer, read it as manager/sales/catalog.
+
+**Roles and scope:**
+
+| Role | Pages | Write | Readable tables | Story |
+|---|---|---|---|---|
+| **manager** | all | ✅ `db_write` | **all** (incl. `Employee`) | full control + sensitive HR data |
+| **sales** | chat, audit | ❌ | catalog + `Customer`, `Invoice`, `InvoiceLine` — **denied `Employee`** | analyze sales, HR off-limits |
+| **catalog** | chat | ❌ | catalog only (`Artist, Album, Track, Genre, MediaType, Playlist, PlaylistTrack`) | public catalog; no customer/HR data |
+
+**New dimension — table scope.** `roles.yaml` gains a `tables` key per role: `"*"` (all) or an explicit list. `zta/rbac.py` gains `KNOWN_TABLES`, `Permissions.table_readable(role, table)` and `tables_allowed(role)` (None = all), with load-time validation of table names.
+
+**Enforcement (engine-level, not SQL-parsing).** The `db_query` tool is built **per request**, bound to the current role's readable tables, installing a SQLite `set_authorizer` callback that returns `SQLITE_DENY` for any `SQLITE_READ` on an out-of-scope table. The resulting access error is caught and recorded as a clean **authorization deny** (`rbac: role 'catalog' not permitted to read table 'Employee'`) in the trace + audit — not a generic error. This is a separate task that lands **after** the auth wiring (it needs the logged-in role at request time).
+
+Table scope is part of the RBAC layer (Layer 1), refined from "which tools" to "which tables," enforced by the DB engine at execution. `policy.yaml` (SELECT-only) remains role-agnostic.
+
 ## Authorization model: two layers, composed with AND
 
 The central design idea. RBAC and the existing policy engine answer **different questions** and are combined so they can never contradict each other:
@@ -80,15 +98,19 @@ zta_tools node → agent.tool(name, args)
 
 ```yaml
 roles:
-  admin:
+  manager:
     pages: [chat, audit, policy, users, roles]
     tools: [echo, db_query, db_write]
-  analyst:
+    tables: "*"                       # all tables, incl. Employee
+  sales:
     pages: [chat, audit]
     tools: [echo, db_query]
-  viewer:
+    tables: [Artist, Album, Track, Genre, MediaType, Playlist, PlaylistTrack,
+             Customer, Invoice, InvoiceLine]   # no Employee
+  catalog:
     pages: [chat]
-    tools: []          # may chat, but the agent may call no tools
+    tools: [echo, db_query]
+    tables: [Artist, Album, Track, Genre, MediaType, Playlist, PlaylistTrack]
 ```
 
 ### `users` table (in the existing `ZTA_DB_PATH` SQLite DB)
@@ -133,10 +155,10 @@ GET  /logout → clear cookie → redirect /login
 
 **Route guard map:**
 
-| Route | admin | analyst | viewer |
+| Route | manager | sales | catalog |
 |---|:--:|:--:|:--:|
 | `/login`, `/logout` | public | public | public |
-| `/`, `/chat`, `/chat/stream` | ✅ | ✅ | ✅ (tools blocked by Layer 1) |
+| `/`, `/chat`, `/chat/stream` | ✅ | ✅ | ✅ (table scope enforced in db_query) |
 | `/audit`, `/api/audit` | ✅ | ✅ | ⛔ 403 |
 | `/policy` | ✅ | ⛔ | ⛔ |
 | `/users` | ✅ | ⛔ | ⛔ |

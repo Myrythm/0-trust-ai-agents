@@ -1,10 +1,18 @@
+# RBAC matrix for the Chinook media-store demo.
+# pages:  which app pages the role may open.
+# tools:  which agent tools the role may invoke (echo, db_query read, db_write).
+# tables: which Chinook tables db_query may read ("*" = all). Enforced at the
+#         SQLite engine via an authorizer; out-of-scope tables are denied.
 roles:
-  admin:
+  manager:
     pages: [chat, audit, policy, users, roles]
     tools: [echo, db_query, db_write]
-  analyst:
+    tables: "*"
+  sales:
     pages: [chat, audit]
     tools: [echo, db_query]
-  viewer:
+    tables: [Artist, Album, Track, Genre, MediaType, Playlist, PlaylistTrack, Customer, Invoice, InvoiceLine]
+  catalog:
     pages: [chat]
-    tools: []
+    tools: [echo, db_query]
+    tables: [Artist, Album, Track, Genre, MediaType, Playlist, PlaylistTrack]

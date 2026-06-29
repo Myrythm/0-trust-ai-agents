@@ -16,7 +16,26 @@
 - Deny-by-default at both layers.
 - Tests run via WSL Ubuntu venv: `wsl -d Ubuntu -e bash -lc 'cd /mnt/d/dev/0trust-ai-agents && .venv/bin/python -m pytest ...'`.
 - Coverage target: 80% overall, 90% for library modules.
-- Roles are exactly `admin`, `analyst`, `viewer`. Pages are exactly `chat`, `audit`, `policy`, `users`, `roles`. Known tools are `echo`, `db_query`, `db_write`.
+- Roles are exactly `manager`, `sales`, `catalog` (see Revision). Pages are exactly `chat`, `audit`, `policy`, `users`, `roles`. Known tools are `echo`, `db_query`, `db_write`. Known tables are the 11 Chinook tables.
+
+## Revision (2026-06-29): Chinook domain roles + table scoping
+
+The data was swapped to the Chinook media-store DB, so the role model changed. **This revision overrides role names and adds a table-scope dimension throughout the tasks below** — wherever a task still shows `admin`/`analyst`/`viewer`, substitute `manager`/`sales`/`catalog` and the scope below.
+
+| Old role | New role | Pages | Write | Readable tables |
+|---|---|---|---|---|
+| admin | **manager** | all | ✅ | `"*"` (all, incl. `Employee`) |
+| analyst | **sales** | chat, audit | ❌ | catalog + `Customer`, `Invoice`, `InvoiceLine` (no `Employee`) |
+| viewer | **catalog** | chat | ❌ | catalog only (`Artist, Album, Track, Genre, MediaType, Playlist, PlaylistTrack`) |
+
+Concretely this changes:
+- **`zta/rbac.py`** — `Role` enum → `MANAGER`/`SALES`/`CATALOG`; add `KNOWN_TABLES`; `Permissions` gains `tables` (`"*"` or list), `table_readable(role, table)`, `tables_allowed(role)`; `RoleRow` gains `tables`; load-time validation of table names. (Done in PR for issue #34 — supersedes the merged Task 1 role names.)
+- **`roles.yaml`** — new names + `tables` key.
+- **seed defaults** (Task 6) — `manager/sales/catalog` (e.g. `manager/manager123`, `sales/sales123`, `catalog/catalog123`).
+- **`/users`, `/roles`, `/policy` guards** (Tasks 6–7) — gated to `manager` (not `admin`).
+- **test helpers / role args** — use `manager` where the old text used `admin`.
+
+**New task — Table-scoped `db_query` (after Task 6 auth wiring):** build the `db_query` tool **per request**, bound to the current role's readable tables, installing a SQLite `set_authorizer` callback that returns `SQLITE_DENY` for `SQLITE_READ` on out-of-scope tables. Catch the resulting access error and record a clean **authorization deny** (`rbac: role 'catalog' not permitted to read table 'Employee'`) in trace + audit. Tests: catalog querying `Customer`/`Employee` → deny; sales querying `Employee` → deny; manager → allowed; scoped `SELECT` within scope → allowed.
 
 ## Delivery Workflow (per task)
 
